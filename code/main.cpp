@@ -65,19 +65,42 @@ struct State
 
 std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
 {
-    std::queue<Tile> frontier;
-    frontier.push(state.startTile);
+    struct Node
+    {
+        int cost;
+        int heuristic;
+        IVector2 position;
+
+        bool operator>(const Node& other) const
+        {
+            if (cost == other.cost)
+                return heuristic > other.heuristic;
+            return cost > other.cost;
+        }
+    };
+
+    std::priority_queue<Node, std::vector<Node>, std::greater<Node>> frontier;
+    frontier.push({ 0, 0, {start.x, start.y} });
 
     bool reached[g_GridWidth][g_GridHeight] = {};
     reached[state.startTile.position.x][state.startTile.position.y] = true;
 
     Tile* cameFrom[g_GridWidth][g_GridHeight] = {};
 
+    int costSoFar[g_GridWidth][g_GridHeight] = {};
+    costSoFar[state.startTile.position.x][state.startTile.position.y] = 0;
+
     std::vector<IVector2> path;
+    
+    auto Heuristic = [](IVector2 start, IVector2 target)
+    {
+        IVector2 delta { std::abs(start.x - target.x), std::abs(start.y - target.y) };
+        return 10 * (delta.x + delta.y) + (-6) * std::min(delta.x, delta.y);
+    };
 
     while (!frontier.empty())
     {
-        Tile current { frontier.front() };
+        Node current { frontier.top() };
         frontier.pop();
 
         RenderCommand renderCommand {};
@@ -101,19 +124,27 @@ std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
             return path;
         }
 
-        // Offset for the 4 nodes
-        const int deltaX[] {  0,  1, 1,  1, 0, -1, -1, -1};
-        const int deltaY[] { -1, -1, 0,  1, 1,  1,  0, -1};
+        // Offset from current node for 8 surrounding nodes
+        std::vector<IVector2> delta { {0, -1}, {1, -1,}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {-1, -1} };
 
         for (int i { 0 }; i < 8; i++)
         {
-            int neighbourX { current.position.x + deltaX[i] };
-            int neighbourY { current.position.y + deltaY[i] };
+            int neighbourX { current.position.x + delta[i].x };
+            int neighbourY { current.position.y + delta[i].y};
 
             if (neighbourX < 0 || neighbourX >= g_GridWidth ||
                 neighbourY < 0 || neighbourY >= g_GridHeight)
             {
                 continue;
+            }
+
+            if (delta[i].x != 0 && delta[i].y != 0)
+            {
+                if (g_TileMap[current.position.x + delta[i].x][current.position.y].type == TileType::Obstacle ||
+                    g_TileMap[current.position.x][current.position.y + delta[i].y].type == TileType::Obstacle)
+                {
+                    continue;
+                }
             }
 
             Tile& neighbour { g_TileMap[neighbourX][neighbourY] };
@@ -123,11 +154,18 @@ std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
                 continue;
             }
 
-            if (!reached[neighbourX][neighbourY])
+            int moveCost { (delta[i].x && delta[i].y) ? 14 : 10 };
+            int newCost { costSoFar[current.position.x][current.position.y] + moveCost };
+
+            if (!reached[neighbourX][neighbourY] || newCost < costSoFar[neighbourX][neighbourY])
             {
-                frontier.push(neighbour);
+                costSoFar[neighbourX][neighbourY] = newCost;
+                int heuristic { Heuristic({ neighbourX, neighbourY }, target) };
+                int cost { newCost + heuristic };
+                frontier.push({ cost, heuristic, {neighbourX, neighbourY} });
                 reached[neighbourX][neighbourY] = true;
                 cameFrom[neighbourX][neighbourY] = &g_TileMap[current.position.x][current.position.y];
+
                 RenderCommand renderCommand {};
                 renderCommand.position = { neighbourX, neighbourY };
                 renderCommand.tileType = TileType::Open;
@@ -258,7 +296,7 @@ int main()
                     if (GetTime() - state.lastStepTime >= state.stepInterval)
                     {
                         state.lastStepTime = GetTime();
-                        const RenderCommand& command { state.renderCommands[state.replayIndex++] };
+                        const RenderCommand command { state.renderCommands[state.replayIndex++] };
 
                         TileType current { g_TileMap[command.position.x][command.position.y].type};
                         if (current != TileType::Start && current != TileType::End)
@@ -338,7 +376,6 @@ int main()
         EndDrawing();
     }
 
-    // UnloadTexture(texture);
     CloseWindow();
     return 0;
 }
