@@ -196,9 +196,6 @@ int main()
 
     while (!WindowShouldClose())
     {
-        BeginDrawing();
-        ClearBackground(WHITE);
-
         if (state.appState == AppState::SelectingStart || 
             state.appState == AppState::SelectingEnd || 
             state.appState == AppState::Ready)
@@ -340,6 +337,8 @@ int main()
 
 
         // Draw
+        BeginDrawing();
+        ClearBackground(DARKGRAY);
         {
             for (int y { 0 }; y < g_GridHeight; y++)
             {
@@ -398,10 +397,10 @@ int main()
                 }
             }
         }
-
         EndDrawing();
+        
     }
-        CloseWindow();
-        return 0;
-    
+
+    CloseWindow();
+    return 0;
 }
