@@ -2,7 +2,6 @@
 #include <cmath>
 #include <vector>
 #include <queue>
-#include <unordered_set>
 #include <algorithm>
 
 struct IVector2
@@ -47,20 +46,27 @@ struct RenderCommand
     TileType tileType;
 };
 
+enum class AppState
+{
+    Initialise,
+    SelectingStart,
+    SelectingEnd,
+    Ready,
+    Replaying,
+    Finish
+};
+
 struct State
 {
-    Tile startTile;
-    Tile targetTile;
+    IVector2 startPos;
+    IVector2 targetPos;
 
-    bool startPicked { false };
-    bool endPicked { false };
-    bool algorithmRan { false };
-    
-    bool replayCommands { false };
     int replayIndex { 0 };
     double lastStepTime { 0.0 };
     double stepInterval { 0.005 };
     std::vector<RenderCommand> renderCommands;
+
+    AppState appState { AppState::Initialise };
 };
 
 std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
@@ -138,7 +144,7 @@ std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
                 continue;
             }
 
-            if (delta[i].x != 0 && delta[i].y != 0)
+            if (delta[i].x && delta[i].y)
             {
                 if (g_TileMap[current.position.x + delta[i].x][current.position.y].type == TileType::Obstacle ||
                     g_TileMap[current.position.x][current.position.y + delta[i].y].type == TileType::Obstacle)
@@ -177,205 +183,225 @@ std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
     return{};
 }
 
-int main() 
+int main()
 {
     // Initialise
     const int screenWidth { g_GridWidth * g_TileSize };
     const int screenHeight { g_GridHeight * g_TileSize };
 
-    InitWindow(screenWidth, screenHeight, "Algorithm visualiser | Start Tile: Left Click | End Tile: Right Click | Obstacle: F | Start Algorithm: Spacebar");
+    InitWindow(screenWidth, screenHeight, "A* Visualiser | Start/End: Left Click | Obstacle: Hold F | Run: Space");
     SetTargetFPS(60);
 
     State state;
 
-    // Initialise grid
-    for (int y { 0 }; y < g_GridHeight; y++)
+    while (!WindowShouldClose())
     {
-        for (int x { 0 }; x < g_GridWidth; x++)
-        {
-            g_TileMap[x][y].type = TileType::Unvisited;
-            g_TileMap[x][y].position = { x, y };
-        }
-    }
-
-    while (!WindowShouldClose()) {
         BeginDrawing();
-            ClearBackground(WHITE);
+        ClearBackground(WHITE);
 
-            // Input
+        if (state.appState == AppState::SelectingStart || 
+            state.appState == AppState::SelectingEnd || 
+            state.appState == AppState::Ready)
+        {
+            if (IsKeyDown(KEY_F))
             {
-                // Place obstacles
-                if (!state.algorithmRan)
+                Vector2 mousePosition { GetMousePosition() };
+                IVector2 tilePosition { static_cast<int>(mousePosition.x / g_TileSize), static_cast<int>(mousePosition.y / g_TileSize) };
+
+                if (tilePosition.x >= 0 && tilePosition.x < g_GridWidth && 
+                    tilePosition.y >= 0 && tilePosition.y < g_GridHeight)
                 {
-                    if (IsKeyDown(KEY_F))
+                    if (g_TileMap[tilePosition.x][tilePosition.y].type != TileType::Start &&
+                        g_TileMap[tilePosition.x][tilePosition.y].type != TileType::End)
                     {
-                        Vector2 mousePosition { GetMousePosition() };
-                        IVector2 tilePosition {};
-                        tilePosition.x = static_cast<int>(mousePosition.x / g_TileSize);
-                        tilePosition.y = static_cast<int>(mousePosition.y / g_TileSize);
-
-                        if (g_TileMap[tilePosition.x][tilePosition.y].type != TileType::Obstacle)
-                        {
-                            g_TileMap[tilePosition.x][tilePosition.y].type = TileType::Obstacle;
-                        }
-                    }
-                }
-
-                // Pick start
-                if (!state.startPicked && !state.endPicked)
-                {
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
-                    {
-                        Vector2 mousePosition { GetMousePosition() };
-                        IVector2 tilePosition {};
-                        tilePosition.x = static_cast<int>(mousePosition.x / g_TileSize);
-                        tilePosition.y = static_cast<int>(mousePosition.y / g_TileSize);
-
-                        if (g_TileMap[tilePosition.x][tilePosition.y].type != TileType::Obstacle)
-                        {
-                            state.startTile.position = { tilePosition.x, tilePosition.y };
-                            state.startPicked = true;
-
-                            g_TileMap[tilePosition.x][tilePosition.y].type = TileType::Start;
-                        }
-                    }
-                }
-
-                // Pick end
-                if (state.startPicked && !state.endPicked)
-                {
-                    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))
-                    {
-                        Vector2 mousePosition { GetMousePosition() };
-                        IVector2 tilePosition {};
-                        tilePosition.x = static_cast<int>(mousePosition.x / g_TileSize);
-                        tilePosition.y = static_cast<int>(mousePosition.y / g_TileSize);
-
-                        if (g_TileMap[tilePosition.x][tilePosition.y].type != TileType::Obstacle)
-                        {
-                            state.targetTile.position = { tilePosition.x, tilePosition.y };
-                            state.endPicked = true;
-
-                            g_TileMap[tilePosition.x][tilePosition.y].type = TileType::End;
-                        }
-                    }
-                }
-
-                // Walk the path
-                if (state.startPicked && state.endPicked)
-                {
-                    if (IsKeyPressed(KEY_SPACE))
-                    {
-                        std::vector<IVector2> path { FindPath(state.startTile.position, state.targetTile.position, state) };
-
-                        for (const auto& tilePosition : path)
-                        {
-                            if (g_TileMap[tilePosition.x][tilePosition.y].type == TileType::Start || g_TileMap[tilePosition.x][tilePosition.y].type == TileType::End)
-                            {
-                                continue;
-                            }
-                            RenderCommand pathTile {};
-                            pathTile.position = { tilePosition.x, tilePosition.y };
-                            pathTile.tileType = TileType::Path;
-                            state.renderCommands.push_back(pathTile);
-                        }
-
-                        state.algorithmRan = true;
-                        state.replayIndex = 0;
-                        state.replayCommands = true;
-                        state.lastStepTime = GetTime();
+                        g_TileMap[tilePosition.x][tilePosition.y].type = TileType::Obstacle;
                     }
                 }
             }
+        }
 
-            // Replay the algorithm commmands
-            if (state.replayCommands)
+        switch (state.appState)
+        {
+        case AppState::Initialise:
+        {
+            // Initialise grid
+            for (int y { 0 }; y < g_GridHeight; y++)
             {
-                if (state.replayIndex < static_cast<int>(state.renderCommands.size()))
+                for (int x { 0 }; x < g_GridWidth; x++)
                 {
-                    if (GetTime() - state.lastStepTime >= state.stepInterval)
-                    {
-                        state.lastStepTime = GetTime();
-                        const RenderCommand command { state.renderCommands[state.replayIndex++] };
-
-                        TileType current { g_TileMap[command.position.x][command.position.y].type};
-                        if (current != TileType::Start && current != TileType::End)
-                        {
-                            g_TileMap[command.position.x][command.position.y].type = command.tileType;
-                        }
-                    }
-                }
-                else
-                {
-                    state.replayCommands = false;
+                    g_TileMap[x][y].type = TileType::Unvisited;
+                    g_TileMap[x][y].position = { x, y };
                 }
             }
 
-            // Draw
+            state.renderCommands.clear();
+            state.appState = AppState::SelectingStart;
+        }
+        break;
+
+        case AppState::SelectingStart:
+        {
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
             {
-                for (int y { 0 }; y < g_GridHeight; y++)
+                Vector2 mousePosition { GetMousePosition() };
+                IVector2 tilePosition { static_cast<int>(mousePosition.x / g_TileSize), static_cast<int>(mousePosition.y / g_TileSize) };
+
+                if (tilePosition.x >= 0 && tilePosition.x < g_GridWidth && 
+                    tilePosition.y >= 0 && tilePosition.y < g_GridHeight)
                 {
-                    for (int x { 0 }; x < g_GridWidth; x++)
+                    if (g_TileMap[tilePosition.x][tilePosition.y].type != TileType::Obstacle)
                     {
-                        Color colour { MAGENTA };
-                        Tile tile { g_TileMap[x][y] };
-                        switch (tile.type)
-                        {
-                        case TileType::Start:
-                        {
-                            colour = DARKGREEN;
-                        }
-                        break;
-
-                        case TileType::End:
-                        {
-                            colour = DARKBLUE;
-                        }
-                        break;
-
-                        break;
-
-                        case TileType::Unvisited:
-                        {
-                            colour = GRAY;
-                        }
-                        break;
-
-                        case TileType::Open:
-                        {
-                            colour = GREEN;
-                        }
-                        break;
-
-                        case TileType::Closed:
-                        {
-                            colour = SKYBLUE;
-                        }
-                        break;
-
-                        case TileType::Obstacle:
-                        {
-                            colour = BLACK;
-                        }
-                        break;
-
-                        case TileType::Path:
-                        {
-                            colour = YELLOW;
-                        }
-                        break;
-
-                        }
-                        DrawRectangle(x * g_TileSize + g_GridGap / 2, y * g_TileSize + g_GridGap /2, g_TileSize - g_GridGap, g_TileSize - g_GridGap, colour);
+                        state.startPos = tilePosition;
+                        g_TileMap[tilePosition.x][tilePosition.y].type = TileType::Start;
+                        state.appState = AppState::SelectingEnd;
                     }
                 }
             }
-            
+        }
+        break;
 
+        case AppState::SelectingEnd:
+        {
+            if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            {
+                Vector2 mousePosition { GetMousePosition() };
+                IVector2 tilePosition { static_cast<int>(mousePosition.x / g_TileSize), static_cast<int>(mousePosition.y / g_TileSize) };
+
+                if (tilePosition.x >= 0 && tilePosition.x < g_GridWidth && 
+                    tilePosition.y >= 0 && tilePosition.y < g_GridHeight)
+                {
+                    if (g_TileMap[tilePosition.x][tilePosition.y].type != TileType::Obstacle &&
+                        g_TileMap[tilePosition.x][tilePosition.y].type != TileType::Start)
+                    {
+                        state.targetPos = tilePosition;
+                        g_TileMap[tilePosition.x][tilePosition.y].type = TileType::End;
+                        state.appState = AppState::Ready;
+                    }
+                }
+            }
+        }
+        break;
+
+        case AppState::Ready:
+        {
+            if (IsKeyPressed(KEY_SPACE))
+            {
+                std::vector<IVector2> path { FindPath(state.startPos, state.targetPos, state) };
+
+                for (const auto& tilePosition : path)
+                {
+                    if (g_TileMap[tilePosition.x][tilePosition.y].type == TileType::Start || 
+                        g_TileMap[tilePosition.x][tilePosition.y].type == TileType::End)
+                    {
+                        continue;
+                    }
+                    state.renderCommands.push_back({ tilePosition, TileType::Path });
+                }
+
+                state.replayIndex = 0;
+                state.lastStepTime = GetTime();
+                state.appState = AppState::Replaying;
+            }
+        }
+        break;
+
+        case AppState::Replaying:
+        {
+            if (state.replayIndex < static_cast<int>(state.renderCommands.size()))
+            {
+                if (GetTime() - state.lastStepTime >= state.stepInterval)
+                {
+                    state.lastStepTime = GetTime();
+                    const RenderCommand command { state.renderCommands[state.replayIndex++] };
+
+                    TileType current { g_TileMap[command.position.x][command.position.y].type };
+                    if (current != TileType::Start && current != TileType::End)
+                    {
+                        g_TileMap[command.position.x][command.position.y].type = command.tileType;
+                    }
+                }
+            }
+            else
+            {
+                state.appState = AppState::Finish;
+            }
+        }
+        break;
+
+        case AppState::Finish:
+        {
+            if (IsKeyPressed(KEY_SPACE))
+            {
+                state.appState = AppState::Initialise;
+            }
+        }
+        break;
+        }
+
+
+        // Draw
+        {
+            for (int y { 0 }; y < g_GridHeight; y++)
+            {
+                for (int x { 0 }; x < g_GridWidth; x++)
+                {
+                    Color colour { MAGENTA };
+                    Tile tile { g_TileMap[x][y] };
+                    switch (tile.type)
+                    {
+                    case TileType::Start:
+                    {
+                        colour = DARKGREEN;
+                    }
+                    break;
+
+                    case TileType::End:
+                    {
+                        colour = DARKBLUE;
+                    }
+                    break;
+
+                    break;
+
+                    case TileType::Unvisited:
+                    {
+                        colour = GRAY;
+                    }
+                    break;
+
+                    case TileType::Open:
+                    {
+                        colour = GREEN;
+                    }
+                    break;
+
+                    case TileType::Closed:
+                    {
+                        colour = SKYBLUE;
+                    }
+                    break;
+
+                    case TileType::Obstacle:
+                    {
+                        colour = BLACK;
+                    }
+                    break;
+
+                    case TileType::Path:
+                    {
+                        colour = YELLOW;
+                    }
+                    break;
+
+                    }
+                    DrawRectangle(x * g_TileSize + g_GridGap / 2, y * g_TileSize + g_GridGap / 2, g_TileSize - g_GridGap, g_TileSize - g_GridGap, colour);
+                }
+            }
+        }
 
         EndDrawing();
     }
-
-    CloseWindow();
-    return 0;
+        CloseWindow();
+        return 0;
+    
 }
