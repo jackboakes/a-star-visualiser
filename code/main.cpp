@@ -54,6 +54,7 @@ struct State
 
     bool startPicked { false };
     bool endPicked { false };
+    bool algorithmRan { false };
     
     bool replayCommands { false };
     int replayIndex { 0 };
@@ -101,10 +102,10 @@ std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
         }
 
         // Offset for the 4 nodes
-        const int deltaX[] { 0, 1, 0, -1 };
-        const int deltaY[] { -1, 0,  1, 0 };
+        const int deltaX[] {  0,  1, 1,  1, 0, -1, -1, -1};
+        const int deltaY[] { -1, -1, 0,  1, 1,  1,  0, -1};
 
-        for (int i { 0 }; i < 4; i++)
+        for (int i { 0 }; i < 8; i++)
         {
             int neighbourX { current.position.x + deltaX[i] };
             int neighbourY { current.position.y + deltaY[i] };
@@ -166,7 +167,7 @@ int main()
             // Input
             {
                 // Place obstacles
-                if (!state.startPicked || !state.endPicked)
+                if (!state.algorithmRan)
                 {
                     if (IsKeyDown(KEY_F))
                     {
@@ -227,7 +228,7 @@ int main()
                 {
                     if (IsKeyPressed(KEY_SPACE))
                     {
-                        std::vector<IVector2> path = FindPath(state.startTile.position, state.targetTile.position, state);
+                        std::vector<IVector2> path { FindPath(state.startTile.position, state.targetTile.position, state) };
 
                         for (const auto& tilePosition : path)
                         {
@@ -241,6 +242,7 @@ int main()
                             state.renderCommands.push_back(pathTile);
                         }
 
+                        state.algorithmRan = true;
                         state.replayIndex = 0;
                         state.replayCommands = true;
                         state.lastStepTime = GetTime();
