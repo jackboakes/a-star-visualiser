@@ -74,7 +74,9 @@ std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
         bool operator>(const Node& other) const
         {
             if (cost == other.cost)
+            {
                 return heuristic > other.heuristic;
+            }
             return cost > other.cost;
         }
     };
@@ -83,15 +85,13 @@ std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
     frontier.push({ 0, 0, {start.x, start.y} });
 
     bool reached[g_GridWidth][g_GridHeight] = {};
-    reached[state.startTile.position.x][state.startTile.position.y] = true;
+    reached[start.x][start.y] = true;
 
     Tile* cameFrom[g_GridWidth][g_GridHeight] = {};
 
     int costSoFar[g_GridWidth][g_GridHeight] = {};
-    costSoFar[state.startTile.position.x][state.startTile.position.y] = 0;
+    costSoFar[start.x][start.y] = 0;
 
-    std::vector<IVector2> path;
-    
     auto Heuristic = [](IVector2 start, IVector2 target)
     {
         IVector2 delta { std::abs(start.x - target.x), std::abs(start.y - target.y) };
@@ -108,8 +108,8 @@ std::vector<IVector2> FindPath(IVector2 start, IVector2 target, State& state)
         renderCommand.tileType = TileType::Closed;
         state.renderCommands.push_back(renderCommand);
 
-        if (current.position.x == state.targetTile.position.x &&
-            current.position.y == state.targetTile.position.y)
+        if (current.position.x == target.x &&
+            current.position.y == target.y)
         {
             std::vector<IVector2> path;
             Tile* step { &g_TileMap[target.x][target.y] };
